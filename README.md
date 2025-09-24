@@ -219,9 +219,15 @@ STコードをラダーロジックに変換
 ### Render（バックエンド）
 1. GitHubリポジトリをRenderに接続
 2. Runtime: Python 3.9
-3. Build command: `cd backend && pip install -r requirements.txt`
+3. Build command: `pip install -r requirements.txt`
 4. Start command: `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
 5. Health check path: `/api/health`
+6. Working directory: `. (root directory)`
+
+**重要: requirements.txtの場所に関する修正**
+- `backend/requirements.txt` をルートディレクトリにコピー
+- render.yamlのworkingDirを明示的に設定
+- これによりRenderがrequirements.txtを正しく認識できるようになる
 
 ### 環境変数
 - `NODE_VERSION`: 20.19.0 (Netlify)
