@@ -218,20 +218,34 @@ STコードをラダーロジックに変換
 
 ### Render（バックエンド）
 1. GitHubリポジトリをRenderに接続
-2. Runtime: Python 3.9
+2. Runtime: Python 3.13.4
 3. Build command: `pip install -r requirements.txt`
 4. Start command: `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
 5. Health check path: `/api/health`
 6. Working directory: `. (root directory)`
 
-**重要: requirements.txtの場所に関する修正**
-- `backend/requirements.txt` をルートディレクトリにコピー
-- render.yamlのworkingDirを明示的に設定
-- これによりRenderがrequirements.txtを正しく認識できるようになる
+**重要な修正点:**
+- `requirements.txt` の配置: `backend/requirements.txt` をルートディレクトリにコピー
+- Pythonバージョン互換性: Python 3.13対応のためパッケージを最新版に更新
+  - FastAPI: 0.104.1 → 0.115.6
+  - Uvicorn: 0.24.0 → 0.30.6
+  - その他全パッケージを最新版に更新
+- フロントエンドAPIエンドポイント: `https://st-ladder-translator.onrender.com/api/convert` を指定
 
 ### 環境変数
 - `NODE_VERSION`: 20.19.0 (Netlify)
 - `PYTHON_VERSION`: 3.9.0 (Render)
+
+### デプロイ状態 ✅
+- **Netlify**: LIVE - https://st-ladder-translator.netlify.app
+- **Render**: LIVE - https://st-ladder-translator.onrender.com
+- **API連携**: 正常動作確認済み
+- **変換機能**: 完全に動作しています
+
+**サービス稼働状況:**
+- 24時間365日自動稼働
+- PCシャットダウン後もアクセス可能
+- GitHub連携による自動デプロイ完了
 
 ## 🚧 今後の拡張予定
 
