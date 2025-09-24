@@ -33,7 +33,7 @@ const App: React.FC = () => {
       const content = await file.text();
 
       const apiUrl = import.meta.env.PROD
-        ? '/api/convert'
+        ? 'https://st-ladder-translator.onrender.com/api/convert'
         : 'http://localhost:8000/api/convert';
 
       const response = await fetch(apiUrl, {
