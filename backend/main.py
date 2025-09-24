@@ -192,7 +192,7 @@ app = FastAPI(title="ST to Ladder Converter API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Netlifyからのアクセスを許可
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

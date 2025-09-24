@@ -34,52 +34,55 @@ const ConversionControlPanel: React.FC<ConversionControlPanelProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border p-6">
-      <h3 className="text-lg font-medium text-gray-900 mb-4">変換設定</h3>
+    <div className="glass-card-dark p-6">
+      <div className="text-center mb-6">
+        <h2 className="text-glow text-lg font-bold mb-2">変換設定</h2>
+        <p className="text-white/80 text-sm">ラダープログラムの変換オプション</p>
+      </div>
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-white font-medium text-sm mb-2">
             PLCメーカー
           </label>
           <select
             value={options.plcType}
             onChange={(e) => handleOptionChange('plcType', e.target.value)}
             disabled={disabled}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent backdrop-blur-sm"
           >
-            <option value="mitsubishi">三菱電機</option>
-            <option value="omron">オムロン</option>
-            <option value="keyence">キーエンス</option>
+            <option value="mitsubishi" className="bg-gray-800">三菱電機</option>
+            <option value="omron" className="bg-gray-800">オムロン</option>
+            <option value="keyence" className="bg-gray-800">キーエンス</option>
           </select>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-white font-medium text-sm mb-2">
             出力形式
           </label>
           <select
             value={options.outputFormat}
             onChange={(e) => handleOptionChange('outputFormat', e.target.value)}
             disabled={disabled}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent backdrop-blur-sm"
           >
-            <option value="gxw">GX Works形式 (.gxw)</option>
-            <option value="csv">CSVデバイスリスト</option>
-            <option value="both">両方出力</option>
+            <option value="gxw" className="bg-gray-800">GX Works形式 (.gxw)</option>
+            <option value="csv" className="bg-gray-800">CSVデバイスリスト</option>
+            <option value="both" className="bg-gray-800">両方出力</option>
           </select>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-3">
           <label className="flex items-center">
             <input
               type="checkbox"
               checked={options.optimizeDeviceUsage}
               onChange={(e) => handleOptionChange('optimizeDeviceUsage', e.target.checked)}
               disabled={disabled}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-white/30 rounded bg-white/10"
             />
-            <span className="ml-2 text-sm text-gray-700">
+            <span className="ml-2 text-white text-sm">
               デバイス使用量を最適化
             </span>
           </label>
@@ -90,9 +93,9 @@ const ConversionControlPanel: React.FC<ConversionControlPanelProps> = ({
               checked={options.generateReport}
               onChange={(e) => handleOptionChange('generateReport', e.target.checked)}
               disabled={disabled}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-white/30 rounded bg-white/10"
             />
-            <span className="ml-2 text-sm text-gray-700">
+            <span className="ml-2 text-white text-sm">
               変換レポートを生成
             </span>
           </label>
@@ -101,9 +104,21 @@ const ConversionControlPanel: React.FC<ConversionControlPanelProps> = ({
         <button
           onClick={handleConvert}
           disabled={disabled || isConverting}
-          className="w-full px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn-modern w-full disabled:opacity-50 disabled:cursor-not-allowed text-base"
         >
-          {isConverting ? '変換中...' : '変換実行'}
+          {isConverting ? (
+            <div className="flex items-center justify-center space-x-2">
+              <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
+              <span>変換中...</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center space-x-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              <span>変換実行</span>
+            </div>
+          )}
         </button>
       </div>
     </div>

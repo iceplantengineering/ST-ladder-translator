@@ -2,6 +2,9 @@
 
 構造化言語（ST/IL）から三菱PLCラダープログラムに自動変換するWebアプリケーション
 
+[![Netlify Status](https://img.shields.io/badge/Deployed%20on-Netlify-00C7B7?style=flat&logo=netlify&logoColor=white)](https://netlify.com)
+[![Render Status](https://img.shields.io/badge/Deployed%20on-Render-46E3B7?style=flat&logo=render&logoColor=white)](https://render.com)
+
 ## 🚀 概要
 
 自動倉庫の在庫管理システムを対象とした、構造化言語からラダーロジックへの自動変換ツールです。IF文、代入文などの基本的なSTコードを解析し、三菱PLCデバイス（X,Y,M,D,T,C）に適切に割り当てます。
@@ -20,15 +23,19 @@
 ## 🛠️ 技術スタック
 
 ### フロントエンド
-- **React 18** + **TypeScript** + **Vite**
+- **React 19** + **TypeScript** + **Vite**
 - **Tailwind CSS** (スタイリング)
 - **Canvas API** (ラダーダイアグラム描画)
 
 ### バックエンド
-- **Python 3.11** + **FastAPI**
+- **Python 3.9** + **FastAPI**
 - **UVicorn** (ASGIサーバー)
 - **独自パーサー** (STコード解析)
 - **変換エンジン** (ラダーロジック生成)
+
+### デプロイ
+- **Netlify** (フロントエンドホスティング)
+- **Render** (バックエンドAPI)
 
 ## 📦 インストールと実行
 
@@ -200,6 +207,25 @@ STコードをラダーロジックに変換
 - **StructuredLanguageParser**: STコード構文解析
 - **LadderConverter**: ラダーロジック変換エンジン
 - **FastAPI Application**: REST APIサーバー
+
+## 🚀 デプロイ
+
+### Netlify（フロントエンド）
+1. GitHubリポジトリをNetlifyに接続
+2. Build command: `cd frontend && npm install && npm run build`
+3. Publish directory: `frontend/dist`
+4. Node.js version: 20.19.0
+
+### Render（バックエンド）
+1. GitHubリポジトリをRenderに接続
+2. Runtime: Python 3.9
+3. Build command: `cd backend && pip install -r requirements.txt`
+4. Start command: `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
+5. Health check path: `/api/health`
+
+### 環境変数
+- `NODE_VERSION`: 20.19.0 (Netlify)
+- `PYTHON_VERSION`: 3.9.0 (Render)
 
 ## 🚧 今後の拡張予定
 

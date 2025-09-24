@@ -1,3 +1,90 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+:root {
+  --font-size-base: 14px;
+}
+
+html {
+  font-size: var(--font-size-base);
+}
+
+body {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-indigo-600: #4f46e5;
+  --color-purple-600: #9333ea;
+  --color-pink-600: #ec4899;
+  --color-blue-500: #3b82f6;
+  --color-blue-600: #2563eb;
+  --color-purple-400: #a855f7;
+  --color-blue-400: #60a5fa;
+  --color-blue-300: #93c5fd;
+  --color-gray-900: #111827;
+  --color-white: #ffffff;
+}
+
+.app-container {
+  @apply min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600;
+}
+
+.glass-card {
+  @apply bg-white/10 backdrop-blur-lg border border-white/20 rounded-2xl shadow-xl;
+}
+
+.glass-card-dark {
+  @apply bg-gray-900/20 backdrop-blur-lg border border-white/10 rounded-2xl shadow-xl;
+}
+
+.modern-card {
+  @apply bg-white rounded-2xl shadow-xl border-0 overflow-hidden;
+}
+
+.btn-modern {
+  @apply px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white text-sm font-semibold rounded-xl hover:from-blue-600 hover:to-purple-700 transition-all duration-300 transform hover:scale-105 shadow-lg;
+}
+
+.btn-secondary-modern {
+  @apply px-4 py-2 bg-white/20 backdrop-blur-sm border border-white/30 text-white text-sm font-semibold rounded-xl hover:bg-white/30 transition-all duration-300;
+}
+
+.upload-zone {
+  @apply border-2 border-dashed border-white/40 rounded-2xl p-6 text-center transition-all duration-300 hover:border-white/60 hover:bg-white/5;
+}
+
+.upload-zone-active {
+  @apply border-blue-400 bg-blue-500/10;
+}
+
+.text-glow {
+  @apply text-white drop-shadow-lg;
+}
+
+.text-accent {
+  @apply text-blue-300;
+}
+
+.icon-lg {
+  @apply w-6 h-6;
+}
+
+.icon-md {
+  @apply w-5 h-5;
+}
+
+.gradient-text {
+  @apply bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent;
+}

@@ -7,7 +7,7 @@ interface LadderViewComponentProps {
       plcType: string;
       generatedAt: string;
     };
-  };
+  } | null;
   width?: number;
   height?: number;
 }
@@ -32,6 +32,8 @@ const LadderViewComponent: React.FC<LadderViewComponentProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+
+  console.log('LadderViewComponent received:', ladderData);
 
   const GRID_SIZE = 20;
   const RUNG_HEIGHT = 100;
@@ -206,77 +208,79 @@ const LadderViewComponent: React.FC<LadderViewComponentProps> = ({
 
   if (!ladderData || ladderData.rungs.length === 0) {
     return (
-      <div className="border rounded-lg bg-gray-50 flex items-center justify-center" style={{ width, height }}>
+      <div className="border rounded-lg bg-gray-50 flex items-center justify-center h-full min-h-[400px]">
         <div className="text-center text-gray-500">
-          <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          <svg className="mx-auto h-8 w-8 text-gray-400" fill="none" viewBox="0 0 20 20" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          <p className="mt-2 text-sm">ラダープログラムが生成されていません</p>
+          <p className="mt-2 text-xs">ラダープログラムが生成されていません</p>
+          <p className="text-[10px] text-gray-400 mt-0.5">ファイルをアップロードして変換を実行してください</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="border rounded-lg overflow-hidden">
-      <div className="bg-gray-100 px-4 py-2 border-b flex items-center justify-between">
+    <div className="border rounded-lg overflow-hidden flex flex-col h-full">
+      <div className="bg-gray-100 px-4 py-2 border-b flex items-center justify-between flex-shrink-0">
         <span className="text-sm font-medium text-gray-700">
           ラダーダイアグラム ({ladderData.rungs.length} ラング)
         </span>
-        <div className="flex space-x-2">
+        <div className="flex space-x-0.5">
           <button
             onClick={() => handleZoom(-1)}
-            className="p-1 hover:bg-gray-200 rounded"
+            className="p-1 hover:bg-gray-200 rounded transition-colors"
             title="縮小"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 20 20">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 12H4" />
             </svg>
           </button>
           <button
             onClick={() => handleZoom(1)}
-            className="p-1 hover:bg-gray-200 rounded"
+            className="p-1 hover:bg-gray-200 rounded transition-colors"
             title="拡大"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 20 20">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
             </svg>
           </button>
           <button
             onClick={() => setScale(1)}
-            className="p-1 hover:bg-gray-200 rounded text-xs"
+            className="p-1 hover:bg-gray-200 rounded text-[10px] transition-colors"
             title="リセット"
           >
             100%
           </button>
         </div>
       </div>
-      <canvas
-        ref={canvasRef}
-        width={width}
-        height={height}
-        className="bg-white cursor-move"
-        onMouseDown={(e) => {
-          const startX = e.clientX;
-          const startY = e.clientY;
-          const startOffset = { ...offset };
+      <div className="flex-1 overflow-auto">
+        <canvas
+          ref={canvasRef}
+          width={width}
+          height={height}
+          className="bg-white cursor-move"
+          onMouseDown={(e) => {
+            const startX = e.clientX;
+            const startY = e.clientY;
 
-          const handleMouseMove = (moveEvent: MouseEvent) => {
-            handlePan(
-              (moveEvent.clientX - startX) / scale,
-              (moveEvent.clientY - startY) / scale
-            );
-          };
+            const handleMouseMove = (moveEvent: MouseEvent) => {
+              handlePan(
+                (moveEvent.clientX - startX) / scale,
+                (moveEvent.clientY - startY) / scale
+              );
+            };
 
-          const handleMouseUp = () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-          };
+            const handleMouseUp = () => {
+              document.removeEventListener('mousemove', handleMouseMove);
+              document.removeEventListener('mouseup', handleMouseUp);
+            };
 
-          document.addEventListener('mousemove', handleMouseMove);
-          document.addEventListener('mouseup', handleMouseUp);
-        }}
-      />
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+          }}
+        />
+      </div>
     </div>
   );
 };

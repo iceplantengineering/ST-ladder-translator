@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import FileUploadComponent from './components/FileUploadComponent';
 import ConversionControlPanel from './components/ConversionControlPanel';
-import ResultPanel from './components/ResultPanel';
+import DownloadPanel from './components/DownloadPanel';
 import LadderViewComponent from './components/LadderViewComponent';
 
 interface ConversionResult {
@@ -32,7 +32,11 @@ const App: React.FC = () => {
       const file = uploadedFiles[0];
       const content = await file.text();
 
-      const response = await fetch('http://localhost:8000/api/convert', {
+      const apiUrl = import.meta.env.PROD
+        ? '/api/convert'
+        : 'http://localhost:8000/api/convert';
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -54,7 +58,16 @@ const App: React.FC = () => {
       }
 
       const result = await response.json();
-      setConversionResult(result);
+      console.log('Conversion result:', result);
+      console.log('Ladder data:', result.ladder_data);
+
+      // プロパティ名をキャメルケースに変換
+      const convertedResult = {
+        ...result,
+        ladderData: result.ladder_data,
+        deviceMap: result.device_map
+      };
+      setConversionResult(convertedResult);
     } catch (error) {
       console.error('Conversion failed:', error);
       setConversionResult({
@@ -71,23 +84,31 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <h1 className="text-xl font-semibold text-gray-900">
-              ST→ラダー変換コンバータ
-            </h1>
-            <div className="text-sm text-gray-500">
-              自動倉庫在庫管理システム対応
+    <div className="app-container">
+      {/* ヘッダー */}
+      <header className="glass-card border-0 m-4 mt-6">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="flex items-center justify-between py-4">
+            <div>
+              <h1 className="text-glow text-2xl font-bold">
+                ST <span className="text-white/80">→</span> ラダー変換コンバータ
+              </h1>
+              <p className="text-white/70 text-sm mt-1">構造化言語をラダーダイアグラムに変換</p>
+            </div>
+            <div className="text-right">
+              <div className="text-white/60 text-xs">自動倉庫在庫管理システム</div>
+              <div className="gradient-text text-xs font-semibold">MVP Edition</div>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1 space-y-6">
+      {/* メインコンテンツ */}
+      <main className="max-w-7xl mx-auto px-4 pb-8">
+        {/* 左右並列レイアウト */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          {/* 左側: アップロード */}
+          <div className="space-y-4">
             <FileUploadComponent
               onFileUpload={handleFileUpload}
               acceptedTypes=".st,.il,.txt"
@@ -95,15 +116,15 @@ const App: React.FC = () => {
             />
 
             {uploadedFiles.length > 0 && (
-              <div className="bg-white rounded-lg shadow-sm border p-4">
-                <h4 className="text-sm font-medium text-gray-900 mb-3">
+              <div className="glass-card-dark p-4">
+                <h4 className="text-white font-medium text-sm mb-2">
                   アップロードファイル
                 </h4>
-                <div className="space-y-2">
+                <div className="space-y-1">
                   {uploadedFiles.map((file, index) => (
-                    <div key={index} className="flex items-center justify-between text-sm">
-                      <span className="text-gray-700 truncate">{file.name}</span>
-                      <span className="text-gray-500">
+                    <div key={index} className="flex items-center justify-between text-xs text-white/80">
+                      <span className="truncate">{file.name}</span>
+                      <span className="text-accent font-mono">
                         {(file.size / 1024).toFixed(1)} KB
                       </span>
                     </div>
@@ -111,26 +132,33 @@ const App: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
 
-            <ConversionControlPanel
-              onConvert={handleConvert}
+          {/* 右側: ダウンロード */}
+          <div>
+            <DownloadPanel
+              conversionResult={conversionResult}
               isConverting={isConverting}
-              disabled={uploadedFiles.length === 0}
             />
           </div>
+        </div>
 
-          <div className="lg:col-span-2 space-y-6">
-            <LadderViewComponent
-              ladderData={conversionResult?.ladderData}
-              width={800}
-              height={600}
-            />
+        {/* 中央: コントロールパネル */}
+        <div className="mb-6">
+          <ConversionControlPanel
+            onConvert={handleConvert}
+            isConverting={isConverting}
+            disabled={uploadedFiles.length === 0}
+          />
+        </div>
 
-            <ResultPanel
-              results={conversionResult}
-              showResults={conversionResult !== null}
-            />
-          </div>
+        {/* 下部: ラダービュー */}
+        <div className="modern-card" style={{ minHeight: '500px' }}>
+          <LadderViewComponent
+            ladderData={conversionResult?.ladderData}
+            width={1000}
+            height={500}
+          />
         </div>
       </main>
     </div>

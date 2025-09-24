@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: st-ladder-translator
+    env: python
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.0
+    healthCheck:
+      path: /api/health
+      initialDelaySeconds: 30
+      periodSeconds: 30
+      timeoutSeconds: 5
+      successThreshold: 1
+      failureThreshold: 5
