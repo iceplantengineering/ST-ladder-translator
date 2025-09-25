@@ -23,6 +23,14 @@ class ConversionResponse(BaseModel):
 
 app = FastAPI(title="ST to Ladder Converter", version="2.0.0")
 
+@app.get("/")
+async def root():
+    return {"message": "ST to Ladder Converter API is running", "status": "healthy"}
+
+@app.get("/api/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
