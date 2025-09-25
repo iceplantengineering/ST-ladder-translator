@@ -18,6 +18,49 @@ const App: React.FC = () => {
   const [isConverting, setIsConverting] = useState(false);
   const [conversionResult, setConversionResult] = useState<ConversionResult | null>(null);
 
+  // テスト用のサンプルデータ
+  const sampleData: ConversionResult = {
+    success: true,
+    ladderData: {
+      rungs: [
+        {
+          elements: [
+            { type: 'contact', address: 'X0', description: 'SensorA', isNormallyOpen: true, x: 40, y: 30 },
+            { type: 'contact', address: 'X1', description: 'SensorB', isNormallyOpen: true, x: 120, y: 30 },
+            { type: 'coil', address: 'Y0', description: 'Motor1', x: 200, y: 30 }
+          ]
+        },
+        {
+          elements: [
+            { type: 'contact', address: 'X2', description: 'Button1', isNormallyOpen: true, x: 40, y: 30 },
+            { type: 'contact', address: 'X3', description: 'Button2', isNormallyOpen: true, x: 120, y: 30 },
+            { type: 'coil', address: 'Y1', description: 'Lamp1', x: 200, y: 30 }
+          ]
+        }
+      ],
+      metadata: {
+        plcType: 'mitsubishi',
+        generatedAt: new Date().toISOString()
+      }
+    },
+    deviceMap: {
+      inputs: { X0: 'SensorA', X1: 'SensorB', X2: 'Button1', X3: 'Button2' },
+      outputs: { Y0: 'Motor1', Y1: 'Lamp1' },
+      internals: {},
+      timers: {},
+      counters: {}
+    },
+    errors: [],
+    warnings: [],
+    processingTime: 0.1
+  };
+
+  // デバッグ用にサンプルデータを自動設定
+  React.useEffect(() => {
+    // テスト用にサンプルデータを設定
+    setConversionResult(sampleData);
+  }, []);
+
   const handleFileUpload = (files: File[]) => {
     setUploadedFiles(files);
     setConversionResult(null);

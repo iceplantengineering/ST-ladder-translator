@@ -8,78 +8,31 @@ import os
 import re
 from datetime import datetime
 
-class StructuredLanguageParser:
-    def parse(self, source_code: str) -> dict:
-        lines = source_code.strip().split('\n')
-        ast = {
-            'variables': {},
-            'statements': [],
-            'functions': {}
-        }
+class ConversionRequest(BaseModel):
+    source_code: str
+    plc_type: str = "mitsubishi"
+    options: Optional[dict] = {}
 
-        for line_num, line in enumerate(lines, 1):
-            line = line.strip()
-            if not line or line.startswith('//') or line.startswith('(*'):
-                continue
+class ConversionResponse(BaseModel):
+    success: bool
+    ladder_data: dict
+    device_map: dict
+    errors: List[str]
+    warnings: List[str]
+    processing_time: float
 
-            # Parse variable declarations
-            if ':' in line and ('VAR' in line or 'VAR_INPUT' in line or 'VAR_OUTPUT' in line):
-                self._parse_variable_declaration(line, ast)
+app = FastAPI(title="ST to Ladder Converter", version="2.0.0")
 
-            # Parse IF statements
-            elif line.startswith('IF'):
-                if_statement = self._parse_if_statement(lines, line_num - 1)
-                ast['statements'].append(if_statement)
+# CORS configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://localhost:5175"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-            # Parse assignment statements
-            elif ':=' in line:
-                assignment = self._parse_assignment(line)
-                ast['statements'].append(assignment)
-
-        return ast
-
-    def _parse_variable_declaration(self, line: str, ast: dict):
-        match = re.match(r'(\w+)\s*:\s*(\w+)', line)
-        if match:
-            var_name, var_type = match.groups()
-            ast['variables'][var_name] = var_type
-
-    def _parse_if_statement(self, lines: list, start_idx: int) -> dict:
-        statement = {
-            'type': 'if',
-            'condition': '',
-            'then_block': [],
-            'else_block': []
-        }
-
-        # Extract condition
-        line = lines[start_idx]
-        if 'THEN' in line:
-            condition = line.replace('IF', '').split('THEN')[0].strip()
-        else:
-            condition = line.replace('IF', '').strip()
-        statement['condition'] = condition
-
-        # Parse THEN block
-        idx = start_idx + 1
-        while idx < len(lines) and not lines[idx].strip().startswith('END_IF'):
-            current_line = lines[idx].strip()
-            if ':=' in current_line:
-                assignment = self._parse_assignment(current_line)
-                statement['then_block'].append(assignment)
-            idx += 1
-
-        return statement
-
-    def _parse_assignment(self, line: str) -> dict:
-        parts = line.split(':=')
-        return {
-            'type': 'assignment',
-            'variable': parts[0].strip(),
-            'value': parts[1].strip().rstrip(';')
-        }
-
-class LadderConverter:
+class SimpleLadderConverter:
     def __init__(self):
         self.device_counters = {
             'X': 0,  # Input devices
@@ -89,8 +42,12 @@ class LadderConverter:
             'T': 0,  # Timers
             'C': 0   # Counters
         }
+        self.variable_map = {}  # Map variable names to device addresses
 
-    def convert(self, ast: dict, plc_type: str) -> tuple:
+    def convert(self, source_code: str, plc_type: str = "mitsubishi") -> tuple:
+        self.device_counters = {k: 0 for k in self.device_counters}
+        self.variable_map = {}
+
         ladder_data = {
             'rungs': [],
             'metadata': {
@@ -107,152 +64,185 @@ class LadderConverter:
             'counters': {}
         }
 
-        # Convert each statement to ladder rungs
-        for statement in ast['statements']:
-            if statement['type'] == 'if':
-                rung, devices = self._convert_if_statement(statement)
-                ladder_data['rungs'].append(rung)
-                self._update_device_map(device_map, devices)
+        lines = source_code.strip().split('\n')
 
-            elif statement['type'] == 'assignment':
-                rung, devices = self._convert_assignment(statement)
-                ladder_data['rungs'].append(rung)
-                self._update_device_map(device_map, devices)
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('//') or line.startswith('(*'):
+                continue
+
+            # Parse variable declarations
+            if ':' in line and ('VAR' in line or 'VAR_INPUT' in line or 'VAR_OUTPUT' in line):
+                self._parse_variable_declaration(line)
+
+            # Parse IF statements
+            elif line.startswith('IF'):
+                rungs = self._parse_if_statement(line, lines)
+                for rung in rungs:
+                    ladder_data['rungs'].append(rung)
 
         return ladder_data, device_map
 
-    def _convert_if_statement(self, statement: dict) -> tuple:
-        # Create a sample rung for IF statement
-        condition_device = f'X{self.device_counters["X"]}'
-        self.device_counters["X"] += 1
+    def _parse_variable_declaration(self, line: str):
+        # Simple variable parsing
+        if 'BOOL' in line:
+            match = re.search(r'(\w+)\s*:\s*BOOL', line)
+            if match:
+                var_name = match.group(1)
+                if var_name not in self.variable_map:
+                    if var_name.startswith('X') or 'Input' in var_name or 'Sensor' in var_name or 'Button' in var_name:
+                        self.variable_map[var_name] = f'X{self.device_counters["X"]}'
+                        self.device_counters["X"] += 1
+                    elif var_name.startswith('Y') or 'Motor' in var_name or 'Lamp' in var_name or 'Valve' in var_name:
+                        self.variable_map[var_name] = f'Y{self.device_counters["Y"]}'
+                        self.device_counters["Y"] += 1
+                    else:
+                        self.variable_map[var_name] = f'M{self.device_counters["M"]}'
+                        self.device_counters["M"] += 1
 
-        output_device = f'M{self.device_counters["M"]}'
-        self.device_counters["M"] += 1
+    def _parse_if_statement(self, if_line: str, lines: List[str]) -> List[dict]:
+        # Extract condition from IF line
+        condition_match = re.search(r'IF\s+(.+?)\s+THEN', if_line, re.IGNORECASE)
+        if not condition_match:
+            return []
 
-        rung = {
-            'elements': [
-                {
-                    'type': 'contact',
-                    'address': condition_device,
-                    'description': f'Condition: {statement["condition"]}',
-                    'isNormallyOpen': True
-                },
-                {
+        condition = condition_match.group(1).strip()
+
+        # Find the corresponding END_IF or next statement
+        then_block = []
+        found_if_line = False
+
+        for i, line in enumerate(lines):
+            stripped_line = line.strip()
+
+            if not found_if_line:
+                if stripped_line.startswith('IF'):
+                    # Extract assignments from the same line as IF
+                    if 'THEN' in stripped_line:
+                        after_then = stripped_line.split('THEN', 1)[1].strip()
+                        if after_then and not after_then.startswith('END_IF'):
+                            # Split multiple assignments
+                            assignments = [part.strip() for part in after_then.split(';') if part.strip()]
+                            for assignment in assignments:
+                                if ':=' in assignment:
+                                    then_block.append(assignment.rstrip(';'))
+                    found_if_line = True
+                continue
+
+            # Check for end of IF block
+            if stripped_line.startswith('END_IF') or stripped_line.startswith('END_IF;'):
+                break
+            elif stripped_line.startswith('IF') or stripped_line.startswith('ELSIF') or stripped_line.startswith('ELSE'):
+                break
+            elif stripped_line and not stripped_line.startswith('//'):
+                # Extract assignments from then block
+                if ':=' in stripped_line:
+                    # Split multiple assignments on the same line
+                    assignments = [part.strip() for part in stripped_line.split(';') if part.strip()]
+                    for assignment in assignments:
+                        if ':=' in assignment:
+                            then_block.append(assignment.rstrip(';'))
+
+        if not then_block:
+            return []
+
+        # Parse the condition to extract individual variables
+        condition_vars = self._parse_condition_variables(condition)
+
+        # Create separate rungs for each output
+        rungs = []
+
+        for assignment in then_block:
+            if ':=' in assignment:
+                var_name = assignment.split(':')[0].strip()
+                value = assignment.split(':')[1].strip()
+
+                # Map variable to device address
+                if var_name in self.variable_map:
+                    device_addr = self.variable_map[var_name]
+                else:
+                    if var_name.startswith('Y') or 'Motor' in var_name or 'Lamp' in var_name or 'Valve' in var_name:
+                        device_addr = f'Y{self.device_counters["Y"]}'
+                        self.device_counters["Y"] += 1
+                    else:
+                        device_addr = f'M{self.device_counters["M"]}'
+                        self.device_counters["M"] += 1
+                    self.variable_map[var_name] = device_addr
+
+                # Create a new rung with all condition variables
+                rung_elements = []
+
+                # Add condition contacts
+                for i, cond_var in enumerate(condition_vars):
+                    if cond_var in self.variable_map:
+                        contact_addr = self.variable_map[cond_var]
+                    else:
+                        contact_addr = f'X{self.device_counters["X"]}'
+                        self.variable_map[cond_var] = contact_addr
+                        self.device_counters["X"] += 1
+
+                    rung_elements.append({
+                        'type': 'contact',
+                        'address': contact_addr,
+                        'description': cond_var,
+                        'isNormallyOpen': True,
+                        'x': 40 + i * 80,
+                        'y': 30
+                    })
+
+                # Add output coil
+                rung_elements.append({
                     'type': 'coil',
-                    'address': output_device,
-                    'description': 'IF condition result'
-                }
-            ]
-        }
+                    'address': device_addr,
+                    'description': f'{var_name} := {value}',
+                    'x': 40 + len(condition_vars) * 80,
+                    'y': 30
+                })
 
-        devices = {
-            'inputs': {condition_device: statement['condition']},
-            'internals': {output_device: 'IF condition result'}
-        }
+                rungs.append({'elements': rung_elements})
 
-        return rung, devices
+        return rungs
 
-    def _convert_assignment(self, statement: dict) -> tuple:
-        # Create a sample rung for assignment
-        input_device = f'M{self.device_counters["M"]}'
-        self.device_counters["M"] += 1
+    def _parse_condition_variables(self, condition: str) -> List[str]:
+        """Parse condition string to extract individual variables"""
+        variables = []
 
-        output_device = f'Y{self.device_counters["Y"]}'
-        self.device_counters["Y"] += 1
+        # Split by AND first
+        and_parts = [part.strip() for part in condition.split('AND')]
 
-        rung = {
-            'elements': [
-                {
-                    'type': 'contact',
-                    'address': input_device,
-                    'description': f'Input: {statement["variable"]}',
-                    'isNormallyOpen': True
-                },
-                {
-                    'type': 'coil',
-                    'address': output_device,
-                    'description': f'Output: {statement["variable"]} = {statement["value"]}'
-                }
-            ]
-        }
+        for part in and_parts:
+            # Handle OR conditions within AND parts
+            if ' OR ' in part:
+                or_parts = [p.strip() for p in part.split('OR')]
+                for or_part in or_parts:
+                    # Clean up the variable name
+                    var = or_part.replace('(', '').replace(')', '').replace('NOT', '').strip()
+                    if var:
+                        variables.append(var)
+            else:
+                # Clean up the variable name
+                var = part.replace('(', '').replace(')', '').replace('NOT', '').strip()
+                if var:
+                    variables.append(var)
 
-        devices = {
-            'internals': {input_device: statement['variable']},
-            'outputs': {output_device: f'{statement["variable"]} = {statement["value"]}'}
-        }
-
-        return rung, devices
-
-    def _update_device_map(self, device_map: dict, new_devices: dict):
-        for device_type, devices in new_devices.items():
-            if device_type in device_map:
-                device_map[device_type].update(devices)
-
-app = FastAPI(title="ST to Ladder Converter API", version="1.0.0")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Netlifyからのアクセスを許可
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-class ConversionRequest(BaseModel):
-    source_code: str
-    plc_type: str = "mitsubishi"
-    options: dict = {}
-
-class ConversionResponse(BaseModel):
-    success: bool
-    ladder_data: dict
-    device_map: dict
-    errors: List[str]
-    warnings: List[str]
-    processing_time: float
-
-@app.get("/")
-async def root():
-    return {"message": "ST to Ladder Converter API is running"}
-
-@app.get("/api/health")
-async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+        return variables
 
 @app.post("/api/convert", response_model=ConversionResponse)
-async def convert_st_to_ladder(request: ConversionRequest):
+async def convert_code(request: ConversionRequest):
+    start_time = datetime.now()
+
     try:
-        start_time = datetime.now()
+        converter = SimpleLadderConverter()
+        ladder_data, device_map = converter.convert(request.source_code, request.plc_type)
 
-        # Parse the structured language code
-        parser = StructuredLanguageParser()
-        converter = LadderConverter()
-
-        # Parse source code
-        try:
-            parsed_ast = parser.parse(request.source_code)
-        except Exception as e:
-            return ConversionResponse(
-                success=False,
-                ladder_data={"rungs": [], "metadata": {}},
-                device_map={},
-                errors=[f"構文解析エラー: {str(e)}"],
-                warnings=[],
-                processing_time=0
-            )
-
-        # Convert to ladder logic
-        try:
-            ladder_data, device_map = converter.convert(parsed_ast, request.plc_type)
-        except Exception as e:
-            return ConversionResponse(
-                success=False,
-                ladder_data={"rungs": [], "metadata": {}},
-                device_map={},
-                errors=[f"変換エラー: {str(e)}"],
-                warnings=[],
-                processing_time=0
-            )
+        # Update device map with variable mappings
+        for var_name, device_addr in converter.variable_map.items():
+            if device_addr.startswith('X'):
+                device_map['inputs'][device_addr] = var_name
+            elif device_addr.startswith('Y'):
+                device_map['outputs'][device_addr] = var_name
+            elif device_addr.startswith('M'):
+                device_map['internals'][device_addr] = var_name
 
         processing_time = (datetime.now() - start_time).total_seconds()
 
@@ -264,22 +254,32 @@ async def convert_st_to_ladder(request: ConversionRequest):
             warnings=[],
             processing_time=processing_time
         )
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        processing_time = (datetime.now() - start_time).total_seconds()
+        return ConversionResponse(
+            success=False,
+            ladder_data={'rungs': [], 'metadata': {'plc_type': request.plc_type, 'generated_at': datetime.now().isoformat()}},
+            device_map={'inputs': {}, 'outputs': {}, 'internals': {}, 'timers': {}, 'counters': {}},
+            errors=[str(e)],
+            warnings=[],
+            processing_time=processing_time
+        )
 
 @app.post("/api/upload-convert")
 async def upload_and_convert(file: UploadFile = File(...)):
     try:
-        if not file.filename.endswith(('.st', '.il', '.txt')):
-            raise HTTPException(status_code=400, detail="Unsupported file type")
-
         content = await file.read()
         source_code = content.decode('utf-8')
 
         request = ConversionRequest(source_code=source_code)
-        return await convert_st_to_ladder(request)
+        return await convert_code(request)
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"Error processing file: {str(e)}"}
+        )
 
 if __name__ == "__main__":
     import uvicorn
