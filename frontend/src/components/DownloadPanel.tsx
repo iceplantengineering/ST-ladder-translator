@@ -13,19 +13,198 @@ interface DownloadPanelProps {
 }
 
 const DownloadPanel: React.FC<DownloadPanelProps> = ({ conversionResult, isConverting }) => {
+  const generateCSV = () => {
+    if (!conversionResult?.deviceMap) return '';
+
+    const { deviceMap } = conversionResult;
+    let csv = 'デバイスアドレス,変数名,種類\n';
+
+    // 入力デバイス
+    Object.entries(deviceMap.inputs || {}).forEach(([address, name]) => {
+      csv += `${address},${name},入力\n`;
+    });
+
+    // 出力デバイス
+    Object.entries(deviceMap.outputs || {}).forEach(([address, name]) => {
+      csv += `${address},${name},出力\n`;
+    });
+
+    // 内部リレー
+    Object.entries(deviceMap.internals || {}).forEach(([address, name]) => {
+      csv += `${address},${name},内部\n`;
+    });
+
+    // タイマー
+    Object.entries(deviceMap.timers || {}).forEach(([address, name]) => {
+      csv += `${address},${name},タイマー\n`;
+    });
+
+    // カウンター
+    Object.entries(deviceMap.counters || {}).forEach(([address, name]) => {
+      csv += `${address},${name},カウンター\n`;
+    });
+
+    return csv;
+  };
+
+  const generateReport = () => {
+    if (!conversionResult) return '';
+
+    const { ladderData, deviceMap, processingTime, errors, warnings } = conversionResult;
+    const timestamp = new Date().toLocaleString('ja-JP');
+
+    let report = `ST → ラダー変換レポート\n`;
+    report += `生成日時: ${timestamp}\n`;
+    report += `処理時間: ${processingTime?.toFixed(3) || 0}秒\n\n`;
+
+    report += `=== 変換サマリー ===\n`;
+    report += `総ラング数: ${ladderData?.rungs?.length || 0}\n`;
+
+    const totalElements = ladderData?.rungs?.reduce((sum, rung) => sum + (rung.elements?.length || 0), 0) || 0;
+    report += `総要素数: ${totalElements}\n\n`;
+
+    // デバイス統計
+    report += `=== デバイス統計 ===\n`;
+    report += `入力デバイス: ${Object.keys(deviceMap?.inputs || {}).length}\n`;
+    report += `出力デバイス: ${Object.keys(deviceMap?.outputs || {}).length}\n`;
+    report += `内部リレー: ${Object.keys(deviceMap?.internals || {}).length}\n`;
+    report += `タイマー: ${Object.keys(deviceMap?.timers || {}).length}\n`;
+    report += `カウンター: ${Object.keys(deviceMap?.counters || {}).length}\n\n`;
+
+    // デバイス詳細
+    if (deviceMap) {
+      report += `=== デバイス詳細 ===\n`;
+
+      if (Object.keys(deviceMap.inputs || {}).length > 0) {
+        report += `[入力デバイス]\n`;
+        Object.entries(deviceMap.inputs).forEach(([address, name]) => {
+          report += `  ${address}: ${name}\n`;
+        });
+        report += '\n';
+      }
+
+      if (Object.keys(deviceMap.outputs || {}).length > 0) {
+        report += `[出力デバイス]\n`;
+        Object.entries(deviceMap.outputs).forEach(([address, name]) => {
+          report += `  ${address}: ${name}\n`;
+        });
+        report += '\n';
+      }
+    }
+
+    // ラング詳細
+    if (ladderData?.rungs) {
+      report += `=== ラング詳細 ===\n`;
+      ladderData.rungs.forEach((rung, index) => {
+        report += `ラング ${index + 1}:\n`;
+        if (rung.elements) {
+          rung.elements.forEach((element, elementIndex) => {
+            const desc = element.description || element.address || `${element.type} ${elementIndex + 1}`;
+            report += `  ${elementIndex + 1}. ${desc}\n`;
+          });
+        }
+        report += '\n';
+      });
+    }
+
+    // エラーと警告
+    if (errors && errors.length > 0) {
+      report += `=== エラー ===\n`;
+      errors.forEach((error, index) => {
+        report += `${index + 1}. ${error}\n`;
+      });
+      report += '\n';
+    }
+
+    if (warnings && warnings.length > 0) {
+      report += `=== 警告 ===\n`;
+      warnings.forEach((warning, index) => {
+        report += `${index + 1}. ${warning}\n`;
+      });
+      report += '\n';
+    }
+
+    return report;
+  };
+
   const handleDownload = (format: string) => {
     if (!conversionResult?.success) return;
 
-    // ダウンロード処理のシミュレーション
-    const filename = `ladder_program.${format}`;
-    const content = format === 'gxw' ? 'GX Works format data' : 'CSV device list data';
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
+    let content: string;
+    let filename: string;
+    let mimeType: string;
+
+    switch (format) {
+      case 'csv':
+        content = generateCSV();
+        filename = `device_list_${new Date().toISOString().slice(0, 10)}.csv`;
+        mimeType = 'text/csv;charset=utf-8;';
+        break;
+
+      case 'report':
+        content = generateReport();
+        filename = `conversion_report_${new Date().toISOString().slice(0, 10)}.txt`;
+        mimeType = 'text/plain;charset=utf-8;';
+        break;
+
+      case 'gxw':
+      default:
+        // GX Works形式のシミュレーション
+        content = generateGXWFormat();
+        filename = `ladder_program_${new Date().toISOString().slice(0, 10)}.gxw`;
+        mimeType = 'text/plain;charset=utf-8;';
+        break;
+    }
+
+    // BOMを追加してExcelでの文字化けを防止
+    const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+    const blobContent = new Blob([bom, content], { type: mimeType });
+    const url = URL.createObjectURL(blobContent);
+
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const generateGXWFormat = () => {
+    if (!conversionResult?.ladderData) return '';
+
+    const { ladderData } = conversionResult;
+    let gxw = `; GX Works 2 形式ラダープログラム\n`;
+    gxw += `; 生成日時: ${new Date().toLocaleString('ja-JP')}\n\n`;
+
+    gxw += `*** MAIN ***\n`;
+
+    ladderData.rungs.forEach((rung, rungIndex) => {
+      gxw += `\n// ラング ${rungIndex + 1}\n`;
+
+      if (rung.elements) {
+        rung.elements.forEach((element, elementIndex) => {
+          const address = element.address || '';
+
+          switch (element.type) {
+            case 'contact':
+              const contactSymbol = element.isNormallyOpen === false ? 'b' : 'a';
+              gxw += `LD ${contactSymbol}${address}\n`;
+              break;
+
+            case 'coil':
+              gxw += `OUT ${address}\n`;
+              break;
+
+            case 'function':
+              gxw += `; ${element.label || 'FUNCTION'} ${address}\n`;
+              break;
+          }
+        });
+      }
+
+      gxw += `// ラング終了\n`;
+    });
+
+    return gxw;
   };
 
   if (!conversionResult) {
