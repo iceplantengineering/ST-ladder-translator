@@ -425,7 +425,15 @@ class SimpleLadderConverter:
         cleaned_lines = []
 
         for line in lines:
-            # Remove Japanese characters more carefully
+            # Remove Japanese comments more carefully - preserve ST code
+            # First, remove inline Japanese comments (text after semicolon that contains Japanese)
+            line = re.sub(r';[^\x00-\x7F].*$', '', line)  # Remove Japanese comments after semicolon
+
+            # Remove standard comments
+            line = re.sub(r'//.*$', '', line)  # Remove line comments
+            line = re.sub(r'\(\*.*?\*\)', '', line)  # Remove block comments
+
+            # Then remove any remaining Japanese characters that might be in code
             line = re.sub(r'[^\x00-\x7F\s\(\)\[\]\{\}:;=\.\+\-\*/%<>&|!\',_\w]', '', line)
             line = re.sub(r'\s+', ' ', line).strip()
 
