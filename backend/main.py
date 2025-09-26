@@ -362,7 +362,15 @@ class SimpleLadderConverter:
         if var_global_match:
             var_global_content = var_global_match.group(1)
 
-        # Remove FUNCTION_BLOCK sections
+        # Extract FUNCTION_BLOCK sections (instead of removing them)
+        function_blocks = []
+        fb_pattern = r'FUNCTION_BLOCK\s+(\w+)\s*(.*?)\s*END_FUNCTION_BLOCK'
+        fb_matches = re.findall(fb_pattern, cleaned, flags=re.DOTALL)
+
+        for fb_name, fb_content in fb_matches:
+            function_blocks.append((fb_name, fb_content))
+
+        # Remove FUNCTION_BLOCK sections from main cleaned content
         cleaned = re.sub(r'FUNCTION_BLOCK.*?END_FUNCTION_BLOCK', '', cleaned, flags=re.DOTALL)
 
         # Remove TYPE sections
@@ -374,13 +382,38 @@ class SimpleLadderConverter:
         if program_match:
             program_content = program_match.group(1)
 
-        # Combine VAR_GLOBAL and PROGRAM content
-        if var_global_content and program_content:
-            cleaned = var_global_content + '\n' + program_content
-        elif var_global_content:
-            cleaned = var_global_content
-        elif program_content:
-            cleaned = program_content
+        # Combine all content: VAR_GLOBAL + FUNCTION_BLOCKs + PROGRAM
+        combined_content = []
+
+        if var_global_content:
+            combined_content.append(var_global_content)
+
+        # Add FUNCTION_BLOCK contents with prefixes
+        for fb_name, fb_content in function_blocks:
+            # Extract VAR sections from FUNCTION_BLOCK
+            var_match = re.search(r'VAR.*?(.*?)END_VAR', fb_content, flags=re.DOTALL)
+            fb_vars = ""
+            if var_match:
+                fb_vars = var_match.group(1)
+
+            # Extract logic (non-VAR) content
+            fb_logic = re.sub(r'VAR.*?END_VAR', '', fb_content, flags=re.DOTALL)
+
+            # Add FB variables with prefix
+            if fb_vars:
+                combined_content.append(f"// FUNCTION_BLOCK {fb_name} variables")
+                combined_content.append(fb_vars)
+
+            # Add FB logic with prefix
+            if fb_logic.strip():
+                combined_content.append(f"// FUNCTION_BLOCK {fb_name} logic")
+                combined_content.append(fb_logic)
+
+        if program_content:
+            combined_content.append("// PROGRAM logic")
+            combined_content.append(program_content)
+
+        cleaned = '\n'.join(combined_content)
 
         # Split into lines and clean up
         lines = cleaned.split('\n')
