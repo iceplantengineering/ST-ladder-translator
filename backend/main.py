@@ -57,10 +57,14 @@ class SimpleLadderConverter:
             'C': 0   # Counters
         }
         self.variable_map = {}  # Map variable names to device addresses
+        self.errors = []
+        self.warnings = []
 
     def convert(self, source_code: str, plc_type: str = "mitsubishi") -> tuple:
         self.device_counters = {k: 0 for k in self.device_counters}
         self.variable_map = {}
+        self.errors = []
+        self.warnings = []
 
         ladder_data = {
             'rungs': [],
@@ -78,41 +82,109 @@ class SimpleLadderConverter:
             'counters': {}
         }
 
-        lines = source_code.strip().split('\n')
+        # Preprocess: remove comments and handle multi-line structures
+        cleaned_code = self._preprocess_code(source_code)
+        lines = cleaned_code.strip().split('\n')
 
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith('//') or line.startswith('(*'):
+        # Parse line by line with support for complex structures
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            if not line:
+                i += 1
                 continue
 
-            # Parse variable declarations
-            if ':' in line and ('VAR' in line or 'VAR_INPUT' in line or 'VAR_OUTPUT' in line):
-                self._parse_variable_declaration(line)
+            try:
+                # Skip unsupported structures (with warnings)
+                if line.startswith('TYPE') or line.startswith('STRUCT') or line.startswith('FUNCTION_BLOCK') or line.startswith('PROGRAM'):
+                    structure_type = line.split()[0]
+                    end_line = self._find_structure_end(lines, i, structure_type)
+                    if end_line:
+                        self.warnings.append(f"Skipping unsupported {structure_type} structure (lines {i+1}-{end_line+1})")
+                        i = end_line + 1
+                        continue
 
-            # Parse IF statements
-            elif line.startswith('IF'):
-                rungs = self._parse_if_statement(line, lines)
-                for rung in rungs:
-                    ladder_data['rungs'].append(rung)
+                # Parse variable declarations (including VAR_GLOBAL)
+                elif ':' in line and ('VAR' in line or 'VAR_INPUT' in line or 'VAR_OUTPUT' in line or 'VAR_GLOBAL' in line):
+                    self._parse_variable_declaration(line)
+
+                # Parse IF statements
+                elif line.startswith('IF'):
+                    rungs = self._parse_if_statement(line, lines[i:])
+                    for rung in rungs:
+                        ladder_data['rungs'].append(rung)
+
+                # Parse CASE statements (convert to IF-ELSE)
+                elif line.startswith('CASE'):
+                    rungs = self._parse_case_statement(line, lines[i:])
+                    for rung in rungs:
+                        ladder_data['rungs'].append(rung)
+
+                # Parse simple assignments
+                elif ':=' in line:
+                    rungs = self._parse_assignment(line)
+                    for rung in rungs:
+                        ladder_data['rungs'].append(rung)
+
+                i += 1
+
+            except Exception as e:
+                self.errors.append(f"Error parsing line {i+1}: '{line}' - {str(e)}")
+                i += 1
 
         return ladder_data, device_map
 
     def _parse_variable_declaration(self, line: str):
-        # Simple variable parsing
+        # Enhanced variable parsing to handle complex declarations
+        line = line.strip()
+
+        # Handle different variable types
         if 'BOOL' in line:
-            match = re.search(r'(\w+)\s*:\s*BOOL', line)
-            if match:
-                var_name = match.group(1)
+            # Extract variable name(s) - handle multiple variables per line
+            var_pattern = r'(\w+)\s*:\s*BOOL'
+            matches = re.findall(var_pattern, line)
+
+            for var_name in matches:
                 if var_name not in self.variable_map:
-                    if var_name.startswith('X') or 'Input' in var_name or 'Sensor' in var_name or 'Button' in var_name:
+                    if var_name.startswith('X') or any(keyword in var_name.lower() for keyword in ['input', 'sensor', 'button', 'start', 'stop', 'emergency']):
                         self.variable_map[var_name] = f'X{self.device_counters["X"]}'
                         self.device_counters["X"] += 1
-                    elif var_name.startswith('Y') or 'Motor' in var_name or 'Lamp' in var_name or 'Valve' in var_name:
+                    elif var_name.startswith('Y') or any(keyword in var_name.lower() for keyword in ['motor', 'lamp', 'valve', 'output', 'alarm', 'buzzer']):
                         self.variable_map[var_name] = f'Y{self.device_counters["Y"]}'
                         self.device_counters["Y"] += 1
                     else:
                         self.variable_map[var_name] = f'M{self.device_counters["M"]}'
                         self.device_counters["M"] += 1
+
+        elif 'DINT' in line:
+            # Handle DINT variables (map to data registers)
+            var_pattern = r'(\w+)\s*:\s*DINT'
+            matches = re.findall(var_pattern, line)
+
+            for var_name in matches:
+                if var_name not in self.variable_map:
+                    self.variable_map[var_name] = f'D{self.device_counters["D"]}'
+                    self.device_counters["D"] += 1
+
+        elif 'REAL' in line:
+            # Handle REAL variables (map to data registers)
+            var_pattern = r'(\w+)\s*:\s*REAL'
+            matches = re.findall(var_pattern, line)
+
+            for var_name in matches:
+                if var_name not in self.variable_map:
+                    self.variable_map[var_name] = f'D{self.device_counters["D"]}'
+                    self.device_counters["D"] += 1
+
+        elif 'TIME' in line:
+            # Handle TIME variables (map to timers)
+            var_pattern = r'(\w+)\s*:\s*TIME'
+            matches = re.findall(var_pattern, line)
+
+            for var_name in matches:
+                if var_name not in self.variable_map:
+                    self.variable_map[var_name] = f'T{self.device_counters["T"]}'
+                    self.device_counters["T"] += 1
 
     def _parse_if_statement(self, if_line: str, lines: List[str]) -> List[dict]:
         # Extract condition from IF line
@@ -241,6 +313,132 @@ class SimpleLadderConverter:
 
         return variables
 
+    def _preprocess_code(self, source_code: str) -> str:
+        """Remove comments and normalize code"""
+        lines = source_code.split('\n')
+        cleaned_lines = []
+
+        for line in lines:
+            # Remove inline comments
+            if '(*' in line and '*)' in line:
+                line = re.sub(r'\(\*.*?\*\)', '', line)
+            elif line.startswith('(*'):
+                continue
+            elif line.strip().startswith('//'):
+                continue
+
+            # Clean up Japanese comments (remove text after certain patterns)
+            line = re.sub(r'[^\w\s\(\)\[\]\{\}:;=\.\+\-\*/%<>&|!\',"]', '', line)
+            cleaned_lines.append(line)
+
+        return '\n'.join(cleaned_lines)
+
+    def _find_structure_end(self, lines: List[str], start_idx: int, structure_type: str) -> Optional[int]:
+        """Find the end line of a structure (TYPE, STRUCT, FUNCTION_BLOCK, PROGRAM)"""
+        end_keywords = {
+            'TYPE': 'END_TYPE',
+            'STRUCT': 'END_STRUCT',
+            'FUNCTION_BLOCK': 'END_FUNCTION_BLOCK',
+            'PROGRAM': 'END_PROGRAM'
+        }
+
+        end_keyword = end_keywords.get(structure_type)
+        if not end_keyword:
+            return None
+
+        for i in range(start_idx + 1, len(lines)):
+            if end_keyword in lines[i]:
+                return i
+        return None
+
+    def _parse_case_statement(self, case_line: str, lines: List[str]) -> List[dict]:
+        """Convert CASE statement to multiple IF statements"""
+        # Extract variable from CASE line
+        case_match = re.search(r'CASE\s+(\w+)\s+OF', case_line, re.IGNORECASE)
+        if not case_match:
+            return []
+
+        case_var = case_match.group(1)
+        rungs = []
+
+        # Find CASE blocks and convert to IF statements
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+
+            if line.startswith('END_CASE'):
+                break
+
+            # Look for case values (e.g., "0:", "1:", etc.)
+            case_value_match = re.search(r'(\d+)\s*:', line)
+            if case_value_match:
+                case_value = case_value_match.group(1)
+
+                # Create IF statement equivalent
+                if_condition = f"IF {case_var} = {case_value} THEN"
+
+                # Find statements in this case block
+                case_statements = []
+                j = i + 1
+                while j < len(lines) and not lines[j].strip().startswith(('END_CASE', str(int(case_value) + 1) + ':')):
+                    stmt = lines[j].strip()
+                    if stmt and not stmt.startswith('//'):
+                        case_statements.append(stmt)
+                    j += 1
+
+                # Convert to IF statement format
+                if case_statements:
+                    if_line = if_condition
+                    for stmt in case_statements:
+                        if ':=' in stmt:
+                            if_line += f" {stmt.rstrip(';')};"
+
+                    # Parse as IF statement
+                    temp_lines = [if_line, "END_IF"]
+                    case_rungs = self._parse_if_statement(if_line, temp_lines)
+                    rungs.extend(case_rungs)
+
+                i = j - 1  # Continue from where we left off
+
+            i += 1
+
+        return rungs
+
+    def _parse_assignment(self, line: str) -> List[dict]:
+        """Parse simple assignment statements"""
+        if ':=' not in line:
+            return []
+
+        parts = line.split(':=')
+        if len(parts) != 2:
+            return []
+
+        var_name = parts[0].strip()
+        value = parts[1].strip().rstrip(';')
+
+        # Map variable to device address
+        if var_name in self.variable_map:
+            device_addr = self.variable_map[var_name]
+        else:
+            if var_name.startswith('Y') or 'Motor' in var_name or 'Lamp' in var_name or 'Valve' in var_name:
+                device_addr = f'Y{self.device_counters["Y"]}'
+                self.device_counters["Y"] += 1
+            else:
+                device_addr = f'M{self.device_counters["M"]}'
+                self.device_counters["M"] += 1
+            self.variable_map[var_name] = device_addr
+
+        # Create a simple rung with the assignment
+        rung_elements = [{
+            'type': 'coil',
+            'address': device_addr,
+            'description': f'{var_name} := {value}',
+            'x': 40,
+            'y': 30
+        }]
+
+        return [{'elements': rung_elements}]
+
 @app.post("/api/convert", response_model=ConversionResponse)
 async def convert_code(request: ConversionRequest):
     start_time = datetime.now()
@@ -260,12 +458,16 @@ async def convert_code(request: ConversionRequest):
 
         processing_time = (datetime.now() - start_time).total_seconds()
 
+        # Determine success based on whether we have any rungs or critical errors
+        has_critical_errors = any("critical" in error.lower() for error in converter.errors)
+        success = len(ladder_data['rungs']) > 0 or not has_critical_errors
+
         return ConversionResponse(
-            success=True,
+            success=success,
             ladder_data=ladder_data,
             device_map=device_map,
-            errors=[],
-            warnings=[],
+            errors=converter.errors,
+            warnings=converter.warnings,
             processing_time=processing_time
         )
 
@@ -275,7 +477,7 @@ async def convert_code(request: ConversionRequest):
             success=False,
             ladder_data={'rungs': [], 'metadata': {'plc_type': request.plc_type, 'generated_at': datetime.now().isoformat()}},
             device_map={'inputs': {}, 'outputs': {}, 'internals': {}, 'timers': {}, 'counters': {}},
-            errors=[str(e)],
+            errors=[f"Critical error: {str(e)}"],
             warnings=[],
             processing_time=processing_time
         )
