@@ -404,10 +404,15 @@ class SimpleLadderConverter:
                 combined_content.append(f"// FUNCTION_BLOCK {fb_name} variables")
                 combined_content.append(fb_vars)
 
-            # Add FB logic with prefix
+            # Add FB logic directly (not as comments)
             if fb_logic.strip():
                 combined_content.append(f"// FUNCTION_BLOCK {fb_name} logic")
-                combined_content.append(fb_logic)
+                # Add the actual FB logic lines
+                fb_lines = fb_logic.strip().split('\n')
+                for line in fb_lines:
+                    cleaned_line = line.strip()
+                    if cleaned_line and not cleaned_line.startswith('END_FUNCTION_BLOCK'):
+                        combined_content.append(cleaned_line)
 
         if program_content:
             combined_content.append("// PROGRAM logic")
