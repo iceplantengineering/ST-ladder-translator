@@ -17,6 +17,7 @@ class ConversionResponse(BaseModel):
     success: bool
     ladder_data: dict
     device_map: dict
+    device_list: List[dict]  # New field for formatted device list
     errors: List[str]
     warnings: List[str]
     processing_time: float
@@ -57,12 +58,14 @@ class SimpleLadderConverter:
             'C': 0   # Counters
         }
         self.variable_map = {}  # Map variable names to device addresses
+        self.device_info = {}   # Map device addresses to device info (name, type, data_type)
         self.errors = []
         self.warnings = []
 
     def convert(self, source_code: str, plc_type: str = "mitsubishi") -> tuple:
         self.device_counters = {k: 0 for k in self.device_counters}
         self.variable_map = {}
+        self.device_info = {}
         self.errors = []
         self.warnings = []
 
@@ -88,7 +91,7 @@ class SimpleLadderConverter:
 
         # First pass: Parse variable declarations
         for line in lines:
-            if ':' in line and ('VAR' in line or 'VAR_INPUT' in line or 'VAR_OUTPUT' in line or 'VAR_GLOBAL' in line):
+            if ':' in line and ('BOOL' in line or 'DINT' in line or 'REAL' in line or 'TIME' in line):
                 self._parse_variable_declaration(line)
 
         # Second pass: Parse logic statements
@@ -124,7 +127,16 @@ class SimpleLadderConverter:
                 self.errors.append(f"Error parsing line {i+1}: '{line}' - {str(e)}")
                 i += 1
 
-        return ladder_data, device_map
+        # Generate formatted device list
+        device_list = []
+        for device_addr, info in self.device_info.items():
+            device_list.append({
+                'device_address': device_addr,
+                'variable_name': info['variable_name'],
+                'device_type': info['device_type']
+            })
+
+        return ladder_data, device_map, device_list
 
     def _parse_variable_declaration(self, line: str):
         # Enhanced variable parsing to handle complex declarations
@@ -138,15 +150,28 @@ class SimpleLadderConverter:
 
             for var_name in matches:
                 if var_name not in self.variable_map:
+                    device_type = None
+                    device_addr = None
+
                     if var_name.startswith('X') or any(keyword in var_name.lower() for keyword in ['input', 'sensor', 'button', 'start', 'stop', 'emergency']):
-                        self.variable_map[var_name] = f'X{self.device_counters["X"]}'
+                        device_addr = f'X{self.device_counters["X"]}'
+                        device_type = '入力'
                         self.device_counters["X"] += 1
                     elif var_name.startswith('Y') or any(keyword in var_name.lower() for keyword in ['motor', 'lamp', 'valve', 'output', 'alarm', 'buzzer']):
-                        self.variable_map[var_name] = f'Y{self.device_counters["Y"]}'
+                        device_addr = f'Y{self.device_counters["Y"]}'
+                        device_type = '出力'
                         self.device_counters["Y"] += 1
                     else:
-                        self.variable_map[var_name] = f'M{self.device_counters["M"]}'
+                        device_addr = f'M{self.device_counters["M"]}'
+                        device_type = '内部リレー'
                         self.device_counters["M"] += 1
+
+                    self.variable_map[var_name] = device_addr
+                    self.device_info[device_addr] = {
+                        'variable_name': var_name,
+                        'device_type': device_type,
+                        'data_type': 'BOOL'
+                    }
 
         elif 'DINT' in line:
             # Handle DINT variables (map to data registers)
@@ -155,7 +180,13 @@ class SimpleLadderConverter:
 
             for var_name in matches:
                 if var_name not in self.variable_map:
-                    self.variable_map[var_name] = f'D{self.device_counters["D"]}'
+                    device_addr = f'D{self.device_counters["D"]}'
+                    self.variable_map[var_name] = device_addr
+                    self.device_info[device_addr] = {
+                        'variable_name': var_name,
+                        'device_type': 'データレジスタ',
+                        'data_type': 'DINT'
+                    }
                     self.device_counters["D"] += 1
 
         elif 'REAL' in line:
@@ -165,7 +196,13 @@ class SimpleLadderConverter:
 
             for var_name in matches:
                 if var_name not in self.variable_map:
-                    self.variable_map[var_name] = f'D{self.device_counters["D"]}'
+                    device_addr = f'D{self.device_counters["D"]}'
+                    self.variable_map[var_name] = device_addr
+                    self.device_info[device_addr] = {
+                        'variable_name': var_name,
+                        'device_type': 'データレジスタ',
+                        'data_type': 'REAL'
+                    }
                     self.device_counters["D"] += 1
 
         elif 'TIME' in line:
@@ -175,7 +212,13 @@ class SimpleLadderConverter:
 
             for var_name in matches:
                 if var_name not in self.variable_map:
-                    self.variable_map[var_name] = f'T{self.device_counters["T"]}'
+                    device_addr = f'T{self.device_counters["T"]}'
+                    self.variable_map[var_name] = device_addr
+                    self.device_info[device_addr] = {
+                        'variable_name': var_name,
+                        'device_type': 'タイマ',
+                        'data_type': 'TIME'
+                    }
                     self.device_counters["T"] += 1
 
     def _parse_if_statement(self, if_line: str, lines: List[str]) -> List[dict]:
@@ -313,7 +356,13 @@ class SimpleLadderConverter:
         # Remove line comments
         cleaned = re.sub(r'//.*$', '', cleaned, flags=re.MULTILINE)
 
-        # Remove FUNCTION_BLOCK sections (but keep PROGRAM sections for main logic)
+        # Extract VAR_GLOBAL section
+        var_global_match = re.search(r'VAR_GLOBAL(.*?)END_VAR', cleaned, flags=re.DOTALL)
+        var_global_content = ""
+        if var_global_match:
+            var_global_content = var_global_match.group(1)
+
+        # Remove FUNCTION_BLOCK sections
         cleaned = re.sub(r'FUNCTION_BLOCK.*?END_FUNCTION_BLOCK', '', cleaned, flags=re.DOTALL)
 
         # Remove TYPE sections
@@ -321,17 +370,17 @@ class SimpleLadderConverter:
 
         # Extract content from PROGRAM section (main logic)
         program_match = re.search(r'PROGRAM\s+\w+\s*(.*?)\s*END_PROGRAM', cleaned, flags=re.DOTALL)
+        program_content = ""
         if program_match:
             program_content = program_match.group(1)
-            # Keep VAR_GLOBAL and the program content
-            var_global_match = re.search(r'VAR_GLOBAL(.*?)END_VAR', cleaned, flags=re.DOTALL)
-            if var_global_match:
-                cleaned = var_global_match.group(1) + '\n' + program_content
-            else:
-                cleaned = program_content
-        else:
-            # If no PROGRAM section, just remove TYPE and FUNCTION_BLOCK
-            pass
+
+        # Combine VAR_GLOBAL and PROGRAM content
+        if var_global_content and program_content:
+            cleaned = var_global_content + '\n' + program_content
+        elif var_global_content:
+            cleaned = var_global_content
+        elif program_content:
+            cleaned = program_content
 
         # Split into lines and clean up
         lines = cleaned.split('\n')
@@ -467,7 +516,7 @@ async def convert_code(request: ConversionRequest):
 
     try:
         converter = SimpleLadderConverter()
-        ladder_data, device_map = converter.convert(request.source_code, request.plc_type)
+        ladder_data, device_map, device_list = converter.convert(request.source_code, request.plc_type)
 
         # Update device map with variable mappings
         for var_name, device_addr in converter.variable_map.items():
@@ -488,6 +537,7 @@ async def convert_code(request: ConversionRequest):
             success=success,
             ladder_data=ladder_data,
             device_map=device_map,
+            device_list=device_list,
             errors=converter.errors,
             warnings=converter.warnings,
             processing_time=processing_time
@@ -499,6 +549,7 @@ async def convert_code(request: ConversionRequest):
             success=False,
             ladder_data={'rungs': [], 'metadata': {'plc_type': request.plc_type, 'generated_at': datetime.now().isoformat()}},
             device_map={'inputs': {}, 'outputs': {}, 'internals': {}, 'timers': {}, 'counters': {}},
+            device_list=[],
             errors=[f"Critical error: {str(e)}"],
             warnings=[],
             processing_time=processing_time
@@ -511,7 +562,8 @@ async def upload_and_convert(file: UploadFile = File(...)):
         source_code = content.decode('utf-8')
 
         request = ConversionRequest(source_code=source_code)
-        return await convert_code(request)
+        response = await convert_code(request)
+        return response
 
     except Exception as e:
         return JSONResponse(
