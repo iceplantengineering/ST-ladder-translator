@@ -86,7 +86,12 @@ class SimpleLadderConverter:
         cleaned_code = self._preprocess_code(source_code)
         lines = cleaned_code.strip().split('\n')
 
-        # Parse line by line with support for complex structures
+        # First pass: Parse variable declarations
+        for line in lines:
+            if ':' in line and ('VAR' in line or 'VAR_INPUT' in line or 'VAR_OUTPUT' in line or 'VAR_GLOBAL' in line):
+                self._parse_variable_declaration(line)
+
+        # Second pass: Parse logic statements
         i = 0
         while i < len(lines):
             line = lines[i].strip()
@@ -95,21 +100,8 @@ class SimpleLadderConverter:
                 continue
 
             try:
-                # Skip unsupported structures (with warnings)
-                if line.startswith('TYPE') or line.startswith('STRUCT') or line.startswith('FUNCTION_BLOCK') or line.startswith('PROGRAM'):
-                    structure_type = line.split()[0]
-                    end_line = self._find_structure_end(lines, i, structure_type)
-                    if end_line:
-                        self.warnings.append(f"Skipping unsupported {structure_type} structure (lines {i+1}-{end_line+1})")
-                        i = end_line + 1
-                        continue
-
-                # Parse variable declarations (including VAR_GLOBAL)
-                elif ':' in line and ('VAR' in line or 'VAR_INPUT' in line or 'VAR_OUTPUT' in line or 'VAR_GLOBAL' in line):
-                    self._parse_variable_declaration(line)
-
                 # Parse IF statements
-                elif line.startswith('IF'):
+                if line.startswith('IF'):
                     rungs = self._parse_if_statement(line, lines[i:])
                     for rung in rungs:
                         ladder_data['rungs'].append(rung)
@@ -120,8 +112,8 @@ class SimpleLadderConverter:
                     for rung in rungs:
                         ladder_data['rungs'].append(rung)
 
-                # Parse simple assignments
-                elif ':=' in line:
+                # Parse simple assignments (only if not part of IF/CASE)
+                elif ':=' in line and not any(keyword in lines[i-1:i+2] for keyword in ['IF', 'CASE', 'THEN', 'ELSE']):
                     rungs = self._parse_assignment(line)
                     for rung in rungs:
                         ladder_data['rungs'].append(rung)
@@ -315,21 +307,43 @@ class SimpleLadderConverter:
 
     def _preprocess_code(self, source_code: str) -> str:
         """Remove comments and normalize code"""
-        lines = source_code.split('\n')
+        # Remove block comments first (multi-line)
+        cleaned = re.sub(r'\(\*.*?\*\)', '', source_code, flags=re.DOTALL)
+
+        # Remove line comments
+        cleaned = re.sub(r'//.*$', '', cleaned, flags=re.MULTILINE)
+
+        # Remove FUNCTION_BLOCK sections (but keep PROGRAM sections for main logic)
+        cleaned = re.sub(r'FUNCTION_BLOCK.*?END_FUNCTION_BLOCK', '', cleaned, flags=re.DOTALL)
+
+        # Remove TYPE sections
+        cleaned = re.sub(r'TYPE.*?END_TYPE', '', cleaned, flags=re.DOTALL)
+
+        # Extract content from PROGRAM section (main logic)
+        program_match = re.search(r'PROGRAM\s+\w+\s*(.*?)\s*END_PROGRAM', cleaned, flags=re.DOTALL)
+        if program_match:
+            program_content = program_match.group(1)
+            # Keep VAR_GLOBAL and the program content
+            var_global_match = re.search(r'VAR_GLOBAL(.*?)END_VAR', cleaned, flags=re.DOTALL)
+            if var_global_match:
+                cleaned = var_global_match.group(1) + '\n' + program_content
+            else:
+                cleaned = program_content
+        else:
+            # If no PROGRAM section, just remove TYPE and FUNCTION_BLOCK
+            pass
+
+        # Split into lines and clean up
+        lines = cleaned.split('\n')
         cleaned_lines = []
 
         for line in lines:
-            # Remove inline comments
-            if '(*' in line and '*)' in line:
-                line = re.sub(r'\(\*.*?\*\)', '', line)
-            elif line.startswith('(*'):
-                continue
-            elif line.strip().startswith('//'):
-                continue
+            # Remove Japanese characters more carefully
+            line = re.sub(r'[^\x00-\x7F\s\(\)\[\]\{\}:;=\.\+\-\*/%<>&|!\',_\w]', '', line)
+            line = re.sub(r'\s+', ' ', line).strip()
 
-            # Clean up Japanese comments (remove text after certain patterns)
-            line = re.sub(r'[^\w\s\(\)\[\]\{\}:;=\.\+\-\*/%<>&|!\',"]', '', line)
-            cleaned_lines.append(line)
+            if line and not line.isspace():
+                cleaned_lines.append(line)
 
         return '\n'.join(cleaned_lines)
 
@@ -346,9 +360,17 @@ class SimpleLadderConverter:
         if not end_keyword:
             return None
 
+        # Handle multi-line structure search
         for i in range(start_idx + 1, len(lines)):
-            if end_keyword in lines[i]:
+            line = lines[i].strip()
+            if end_keyword in line:
                 return i
+            # Handle nested structures
+            if any(struct in line for struct in end_keywords.keys()):
+                # Find the end of nested structure
+                nested_end = self._find_structure_end(lines, i, line.split()[0])
+                if nested_end:
+                    i = nested_end
         return None
 
     def _parse_case_statement(self, case_line: str, lines: List[str]) -> List[dict]:
